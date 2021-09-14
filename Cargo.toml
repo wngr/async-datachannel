@@ -1,0 +1,33 @@
+[package]
+name = "async-datachannel-rs"
+version = "0.1.0"
+edition = "2018"
+authors = ["Oliver Wangler <oliver@wngr.de>"]
+description = "Async Wrapper for datachannel-rs"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/wngr/async-datachannel-rs"
+homepage = "https://github.com/wngr/async-datachannel-rs"
+documentation = "https://docs.rs/async-datachannel-rs"
+keywords = ["webrtc", "async", "datachannel"]
+categories = ["concurrency"]
+readme = "README.md"
+
+[dependencies]
+anyhow = "1.0.44"
+datachannel = "0.6.4"
+parking_lot = "0.11.2"
+serde = { version = "1.0.130", features = ["derive"] }
+tokio = { version = "1.11.0", features = ["io-util", "sync"] }
+tracing = "0.1.26"
+
+[dev-dependencies]
+async-tungstenite = { version = "0.15.0", features = ["tokio-openssl"] }
+futures = "0.3.17"
+serde_json = "1.0.67"
+tokio = { version = "1.11.0", features = ["full"] }
+tracing-subscriber = "0.2.21"
+
+[features]
+default = ["static"]
+static = ["datachannel/static"]
+
