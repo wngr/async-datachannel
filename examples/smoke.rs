@@ -91,9 +91,7 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         let n = dc.read(&mut buf).await?;
-        if n > 0 {
-            println!("Read: \"{}\"", String::from_utf8_lossy(&buf[..n]));
-        }
+        println!("Read: \"{}\"", String::from_utf8_lossy(&buf[..n]));
         dc.write(b"Ping").await?;
         tokio::time::sleep(Duration::from_secs(2)).await;
     }

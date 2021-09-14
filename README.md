@@ -33,9 +33,7 @@ dc.write(b"Hello").await?;
 
 let mut buf = vec![0; 32];
 let n = dc.read(&mut buf).await?;
-if n > 0 {
-    assert_eq!(b"World", &buf[..n]);
-}
+assert_eq!(b"World", &buf[..n]);
 ```
 
 ## License
