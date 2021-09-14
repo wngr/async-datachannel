@@ -1,24 +1,30 @@
 use std::{sync::Arc, task::Poll};
 
 use anyhow::Context;
-pub use datachannel::RtcConfig;
-use datachannel::{
-    DataChannelHandler, IceCandidate, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection,
-    SessionDescription,
-};
+pub use datachannel::{ConnectionState, IceCandidate, RtcConfig, SessionDescription};
+use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection};
+use derive_more::{AsRef, Display, From};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::mpsc,
+    task::JoinHandle,
 };
 use tracing::{debug, error};
 
-#[derive(Serialize, Deserialize)]
+#[derive(From, Debug, Eq, PartialEq, Clone, AsRef, Display)]
+#[from(forward)]
+#[as_ref(forward)]
+pub struct PeerId(String);
+pub type ConnectionMessage = (PeerId, Message);
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-pub enum ConnectionMessage {
+pub enum Message {
     RemoteDescription(SessionDescription),
     RemoteCandidate(IceCandidate),
+    #[serde(skip)]
+    ConnectionState(ConnectionState),
 }
 
 struct DataChannel {
@@ -45,18 +51,18 @@ impl DataChannel {
 }
 
 impl DataChannelHandler for DataChannel {
-    // TODO?
     fn on_open(&mut self) {
         debug!("on_open");
         // Signal open
         let _ = self.tx_ready.blocking_send(Ok(()));
     }
 
-    // TODO?
+    // TODO
     fn on_closed(&mut self) {
         debug!("on_closed");
     }
 
+    // TODO
     fn on_error(&mut self, err: &str) {
         let _ = self
             .tx_ready
@@ -83,6 +89,7 @@ pub struct DataStream {
     rx_inbound: mpsc::Receiver<Vec<u8>>,
     buf_inbound: Vec<u8>,
 }
+
 impl AsyncRead for DataStream {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -153,6 +160,14 @@ impl AsyncWrite for DataStream {
 pub struct Listener {
     peer_con: Arc<Mutex<Box<PeerConnection>>>,
     rx_incoming: mpsc::Receiver<DataStream>,
+    remote: Arc<Mutex<Option<PeerId>>>,
+    handle: JoinHandle<()>,
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
 }
 
 impl Listener {
@@ -164,21 +179,26 @@ impl Listener {
         ),
     ) -> anyhow::Result<Self> {
         let (tx_incoming, rx_incoming) = mpsc::channel(8);
+        let remote = Arc::new(Mutex::new(None));
         let peer_con = Arc::new(Mutex::new(RtcPeerConnection::new(
             config,
             ListenerInternal {
                 tx_signal: sig_tx,
                 tx_incoming,
                 pending: None,
+                remote: remote.clone(),
             },
         )?));
         let pc = peer_con.clone();
-        // TODO: handle drop
-        tokio::spawn(async move {
+        let remote_c = remote.clone();
+        let handle = tokio::spawn(async move {
             while let Some(m) = sig_rx.recv().await {
-                if let Err(err) = match m {
-                    ConnectionMessage::RemoteDescription(i) => pc.lock().set_remote_description(&i),
-                    ConnectionMessage::RemoteCandidate(i) => pc.lock().add_remote_candidate(&i),
+                remote_c.lock().replace(m.0);
+
+                if let Err(err) = match m.1 {
+                    Message::RemoteDescription(i) => pc.lock().set_remote_description(&i),
+                    Message::RemoteCandidate(i) => pc.lock().add_remote_candidate(&i),
+                    _ => Ok(()),
                 } {
                     error!(?err, "Error interacting with RtcPeerConnection");
                 }
@@ -187,16 +207,17 @@ impl Listener {
         Ok(Self {
             peer_con,
             rx_incoming,
+            handle,
+            remote,
         })
     }
 
-    // TODO: return more metadata?
     pub async fn accept(&mut self) -> anyhow::Result<DataStream> {
-        self.rx_incoming.recv().await.context("FIXME")
+        self.rx_incoming.recv().await.context("Tx dropped")
     }
 
-    pub async fn dial(&self, _peer: &str, label: &str) -> anyhow::Result<DataStream> {
-        // TODO handle signaling for peer
+    pub async fn dial(&self, peer: PeerId, label: &str) -> anyhow::Result<DataStream> {
+        self.remote.lock().replace(peer);
         let (mut ready, rx_inbound, chan) = DataChannel::new();
         let dc = self.peer_con.lock().create_data_channel(label, chan)?;
         ready.recv().await.context("Tx dropped")??;
@@ -212,6 +233,7 @@ struct ListenerInternal {
     tx_incoming: mpsc::Sender<DataStream>,
     tx_signal: mpsc::Sender<ConnectionMessage>,
     pending: Option<mpsc::Receiver<Vec<u8>>>,
+    remote: Arc<Mutex<Option<PeerId>>>,
 }
 
 impl PeerConnectionHandler for ListenerInternal {
@@ -224,19 +246,24 @@ impl PeerConnectionHandler for ListenerInternal {
     }
 
     fn on_description(&mut self, sess_desc: SessionDescription) {
+        let remote = self.remote.lock().as_ref().cloned().expect("Remote is set");
         let _ = self
             .tx_signal
-            .blocking_send(ConnectionMessage::RemoteDescription(sess_desc));
+            .blocking_send((remote, Message::RemoteDescription(sess_desc)));
     }
 
     fn on_candidate(&mut self, cand: IceCandidate) {
+        let remote = self.remote.lock().as_ref().cloned().expect("Remote is set");
         let _ = self
             .tx_signal
-            .blocking_send(ConnectionMessage::RemoteCandidate(cand));
+            .blocking_send((remote, Message::RemoteCandidate(cand)));
     }
 
     fn on_connection_state_change(&mut self, state: datachannel::ConnectionState) {
-        //TODO
+        let remote = self.remote.lock().as_ref().cloned().expect("Remote is set");
+        let _ = self
+            .tx_signal
+            .blocking_send((remote, Message::ConnectionState(state)));
     }
 
     fn on_data_channel(&mut self, data_channel: Box<RtcDataChannel<Self::DCH>>) {

@@ -15,8 +15,9 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.44"
 datachannel = "0.6.4"
+derive_more = "0.99.16"
 parking_lot = "0.11.2"
-serde = { version = "1.0.130", features = ["derive"] }
+serde = { version = "1.0.130", optional = true, features = ["derive"] }
 tokio = { version = "1.11.0", features = ["io-util", "sync"] }
 tracing = "0.1.26"
 
@@ -28,6 +29,7 @@ tokio = { version = "1.11.0", features = ["full"] }
 tracing-subscriber = "0.2.21"
 
 [features]
-default = ["static"]
+default = ["static", "derive"]
 static = ["datachannel/static"]
+derive = ["serde"]
 
