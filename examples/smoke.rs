@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let conf = RtcConfig::new(&ice_servers);
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
     let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
-    let mut listener = Listener::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
+    let listener = Listener::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
 
     let mut input = std::env::args().skip(1);
 

@@ -29,12 +29,13 @@ pub enum Message {
 
 struct DataChannel {
     tx_ready: mpsc::Sender<anyhow::Result<()>>,
-    tx_inbound: mpsc::Sender<Vec<u8>>,
+    tx_inbound: mpsc::Sender<anyhow::Result<Vec<u8>>>,
 }
+#[allow(clippy::type_complexity)]
 impl DataChannel {
     fn new() -> (
         mpsc::Receiver<anyhow::Result<()>>,
-        mpsc::Receiver<Vec<u8>>,
+        mpsc::Receiver<anyhow::Result<Vec<u8>>>,
         Self,
     ) {
         let (tx_ready, rx_ready) = mpsc::channel(1);
@@ -57,22 +58,26 @@ impl DataChannelHandler for DataChannel {
         let _ = self.tx_ready.blocking_send(Ok(()));
     }
 
-    // TODO
     fn on_closed(&mut self) {
         debug!("on_closed");
+        let _ = self
+            .tx_inbound
+            .blocking_send(Err(anyhow::anyhow!("Closed")));
     }
 
-    // TODO
     fn on_error(&mut self, err: &str) {
         let _ = self
             .tx_ready
+            .blocking_send(Err(anyhow::anyhow!(err.to_string())));
+        let _ = self
+            .tx_inbound
             .blocking_send(Err(anyhow::anyhow!(err.to_string())));
     }
 
     fn on_message(&mut self, msg: &[u8]) {
         let s = String::from_utf8_lossy(msg);
         debug!("on_message {}", s);
-        let _ = self.tx_inbound.blocking_send(msg.to_vec());
+        let _ = self.tx_inbound.blocking_send(Ok(msg.to_vec()));
     }
 
     // TODO?
@@ -85,9 +90,16 @@ impl DataChannelHandler for DataChannel {
 
 type PeerConnection = RtcPeerConnection<ListenerInternal>;
 pub struct DataStream {
+    /// The actual data channel
     inner: Box<RtcDataChannel<DataChannel>>,
-    rx_inbound: mpsc::Receiver<Vec<u8>>,
+    /// Receiver for inbound bytes from the data channel
+    rx_inbound: mpsc::Receiver<anyhow::Result<Vec<u8>>>,
+    /// Intermediate buffer of inbound bytes, to be polled by `poll_read`
     buf_inbound: Vec<u8>,
+    /// Reference to the PeerConnection to keep around
+    peer_con: Option<Arc<Mutex<Box<PeerConnection>>>>,
+    /// Reference to the outbound piper
+    handle: Option<JoinHandle<()>>,
 }
 
 impl AsyncRead for DataStream {
@@ -108,7 +120,7 @@ impl AsyncRead for DataStream {
             Poll::Ready(Ok(()))
         } else {
             match self.as_mut().rx_inbound.poll_recv(cx) {
-                std::task::Poll::Ready(Some(x)) => {
+                std::task::Poll::Ready(Some(Ok(x))) => {
                     let space = buf.remaining();
                     if x.len() <= space {
                         buf.put_slice(&x[..]);
@@ -118,6 +130,10 @@ impl AsyncRead for DataStream {
                     }
                     Poll::Ready(Ok(()))
                 }
+                std::task::Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))),
                 std::task::Poll::Ready(None) => Poll::Ready(Ok(())),
                 Poll::Pending => Poll::Pending,
             }
@@ -164,12 +180,6 @@ pub struct Listener {
     handle: JoinHandle<()>,
 }
 
-impl Drop for Listener {
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
-
 impl Listener {
     pub fn new(
         config: &RtcConfig,
@@ -212,11 +222,14 @@ impl Listener {
         })
     }
 
-    pub async fn accept(&mut self) -> anyhow::Result<DataStream> {
-        self.rx_incoming.recv().await.context("Tx dropped")
+    pub async fn accept(mut self) -> anyhow::Result<DataStream> {
+        let mut s = self.rx_incoming.recv().await.context("Tx dropped")?;
+        s.handle = Some(self.handle);
+        s.peer_con = Some(self.peer_con);
+        Ok(s)
     }
 
-    pub async fn dial(&self, peer: PeerId, label: &str) -> anyhow::Result<DataStream> {
+    pub async fn dial(self, peer: PeerId, label: &str) -> anyhow::Result<DataStream> {
         self.remote.lock().replace(peer);
         let (mut ready, rx_inbound, chan) = DataChannel::new();
         let dc = self.peer_con.lock().create_data_channel(label, chan)?;
@@ -225,6 +238,8 @@ impl Listener {
             inner: dc,
             rx_inbound,
             buf_inbound: vec![],
+            handle: Some(self.handle),
+            peer_con: Some(self.peer_con),
         })
     }
 }
@@ -232,7 +247,7 @@ impl Listener {
 struct ListenerInternal {
     tx_incoming: mpsc::Sender<DataStream>,
     tx_signal: mpsc::Sender<ConnectionMessage>,
-    pending: Option<mpsc::Receiver<Vec<u8>>>,
+    pending: Option<mpsc::Receiver<anyhow::Result<Vec<u8>>>>,
     remote: Arc<Mutex<Option<PeerId>>>,
 }
 
@@ -275,6 +290,8 @@ impl PeerConnectionHandler for ListenerInternal {
                 .take()
                 .expect("`data_channel_handler` was just called synchronously in the same thread"),
             buf_inbound: vec![],
+            handle: None,
+            peer_con: Default::default(),
         });
     }
 }
