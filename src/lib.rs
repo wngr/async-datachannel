@@ -1,3 +1,6 @@
+///! Async wrapper for the [`datachannel-rs`] crate.
+///!
+///! [`datachannel-rs`]: https://crates.io/crates/datachannel
 use std::{sync::Arc, task::Poll};
 
 use anyhow::Context;
@@ -5,6 +8,7 @@ pub use datachannel::{ConnectionState, IceCandidate, RtcConfig, SessionDescripti
 use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection};
 use derive_more::{AsRef, Display, From};
 use parking_lot::Mutex;
+#[cfg(feature = "derive")]
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -16,14 +20,17 @@ use tracing::{debug, error};
 #[derive(From, Debug, Eq, PartialEq, Clone, AsRef, Display)]
 #[from(forward)]
 #[as_ref(forward)]
+/// A string identifying the remote peer.
 pub struct PeerId(String);
 pub type ConnectionMessage = (PeerId, Message);
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
+#[derive(Debug)]
+#[cfg_attr(feature = "derive", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "derive", serde(untagged))]
+/// Messages to be used for external signalling.
 pub enum Message {
     RemoteDescription(SessionDescription),
     RemoteCandidate(IceCandidate),
-    #[serde(skip)]
+    #[cfg_attr(feature = "derive", serde(skip))]
     ConnectionState(ConnectionState),
 }
 
@@ -88,7 +95,8 @@ impl DataChannelHandler for DataChannel {
     }
 }
 
-type PeerConnection = RtcPeerConnection<ListenerInternal>;
+/// The opened data channel. This struct implements both [`AsyncRead`] and [`AsyncWrite`]
+/// (tokio-flavoured).
 pub struct DataStream {
     /// The actual data channel
     inner: Box<RtcDataChannel<DataChannel>>,
@@ -97,7 +105,7 @@ pub struct DataStream {
     /// Intermediate buffer of inbound bytes, to be polled by `poll_read`
     buf_inbound: Vec<u8>,
     /// Reference to the PeerConnection to keep around
-    peer_con: Option<Arc<Mutex<Box<PeerConnection>>>>,
+    peer_con: Option<Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>>,
     /// Reference to the outbound piper
     handle: Option<JoinHandle<()>>,
 }
@@ -173,14 +181,16 @@ impl AsyncWrite for DataStream {
     }
 }
 
-pub struct Listener {
-    peer_con: Arc<Mutex<Box<PeerConnection>>>,
+pub struct PeerConnection {
+    peer_con: Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>,
     rx_incoming: mpsc::Receiver<DataStream>,
     remote: Arc<Mutex<Option<PeerId>>>,
     handle: JoinHandle<()>,
 }
 
-impl Listener {
+impl PeerConnection {
+    /// Create a new [`PeerConnection`] to be used for either dialing or accepting an inbound
+    /// connection. The channel tuple is used to interface with an external signalling system.
     pub fn new(
         config: &RtcConfig,
         (sig_tx, mut sig_rx): (
@@ -192,7 +202,7 @@ impl Listener {
         let remote = Arc::new(Mutex::new(None));
         let peer_con = Arc::new(Mutex::new(RtcPeerConnection::new(
             config,
-            ListenerInternal {
+            ConnInternal {
                 tx_signal: sig_tx,
                 tx_incoming,
                 pending: None,
@@ -222,6 +232,7 @@ impl Listener {
         })
     }
 
+    /// Wait for an inbound connection.
     pub async fn accept(mut self) -> anyhow::Result<DataStream> {
         let mut s = self.rx_incoming.recv().await.context("Tx dropped")?;
         s.handle = Some(self.handle);
@@ -229,6 +240,7 @@ impl Listener {
         Ok(s)
     }
 
+    /// Initiate an outbound dialing.
     pub async fn dial(self, peer: PeerId, label: &str) -> anyhow::Result<DataStream> {
         self.remote.lock().replace(peer);
         let (mut ready, rx_inbound, chan) = DataChannel::new();
@@ -244,14 +256,14 @@ impl Listener {
     }
 }
 
-struct ListenerInternal {
+struct ConnInternal {
     tx_incoming: mpsc::Sender<DataStream>,
     tx_signal: mpsc::Sender<ConnectionMessage>,
     pending: Option<mpsc::Receiver<anyhow::Result<Vec<u8>>>>,
     remote: Arc<Mutex<Option<PeerId>>>,
 }
 
-impl PeerConnectionHandler for ListenerInternal {
+impl PeerConnectionHandler for ConnInternal {
     type DCH = DataChannel;
 
     fn data_channel_handler(&mut self) -> Self::DCH {

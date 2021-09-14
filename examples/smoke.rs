@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use async_datachannel_rs::{Listener, Message, PeerId, RtcConfig};
+use async_datachannel::{Message, PeerConnection, PeerId, RtcConfig};
 use async_tungstenite::{tokio::connect_async, tungstenite};
 use futures::{SinkExt, StreamExt};
 use tokio::{
@@ -9,6 +9,10 @@ use tokio::{
 };
 use tracing::{debug, info};
 
+/// Works with the signalling server from https://github.com/paullouisageneau/libdatachannel/tree/master/examples/signaling-server-rust
+/// Start two shells
+/// 1. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000/other_peer
+/// 2. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000/initiator other_peer
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -17,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
     let conf = RtcConfig::new(&ice_servers);
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
     let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
-    let listener = Listener::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
+    let listener = PeerConnection::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
 
     let mut input = std::env::args().skip(1);
 

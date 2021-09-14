@@ -1,13 +1,13 @@
 [package]
-name = "async-datachannel-rs"
+name = "async-datachannel"
 version = "0.1.0"
 edition = "2018"
 authors = ["Oliver Wangler <oliver@wngr.de>"]
-description = "Async Wrapper for datachannel-rs"
+description = "Async Wrapper for datachannel"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/wngr/async-datachannel-rs"
-homepage = "https://github.com/wngr/async-datachannel-rs"
-documentation = "https://docs.rs/async-datachannel-rs"
+repository = "https://github.com/wngr/async-datachannel"
+homepage = "https://github.com/wngr/async-datachannel"
+documentation = "https://docs.rs/async-datachannel"
 keywords = ["webrtc", "async", "datachannel"]
 categories = ["concurrency"]
 readme = "README.md"
