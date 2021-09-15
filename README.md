@@ -8,6 +8,9 @@
 Async wrapper for the [`datachannel`] crate. For a complete example check the
 [examples](./examples) directory.
 
+Note that this crate currently is made to work only with the tokio runtime. If
+you're interested in supporting other runtimes, let me know.
+
 [`datachannel`]: https://crates.io/crates/datachannel
 
 ## Quickstart
