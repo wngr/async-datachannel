@@ -1,6 +1,6 @@
 [package]
 name = "async-datachannel"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 authors = ["Oliver Wangler <oliver@wngr.de>"]
 description = "Async Wrapper for datachannel"
@@ -14,7 +14,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.44"
-datachannel = "0.6.4"
+datachannel = "0.7.0"
 derive_more = "0.99.16"
 parking_lot = "0.11.2"
 serde = { version = "1.0.130", optional = true, features = ["derive"] }
