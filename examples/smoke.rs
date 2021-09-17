@@ -1,8 +1,10 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use async_datachannel::{Message, PeerConnection, PeerId, RtcConfig};
+use async_datachannel::{Message, PeerConnection, RtcConfig};
 use async_tungstenite::{tokio::connect_async, tungstenite};
 use futures::{SinkExt, StreamExt};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
@@ -11,8 +13,15 @@ use tracing::{debug, info};
 
 /// Works with the signalling server from https://github.com/paullouisageneau/libdatachannel/tree/master/examples/signaling-server-rust
 /// Start two shells
-/// 1. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000/other_peer
-/// 2. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000/initiator other_peer
+/// 1. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000 other_peer
+/// 2. RUST_LOG=debug cargo run --example smoke -- ws://127.0.0.1:8000 initiator other_peer
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SignalingMessage {
+    // id of the peer this messaged is supposed for
+    id: String,
+    payload: Message,
+}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -26,19 +35,22 @@ async fn main() -> anyhow::Result<()> {
     let mut input = std::env::args().skip(1);
 
     let signaling_uri = input.next().unwrap();
+    let my_id = input.next().unwrap();
+    let signaling_uri = format!("{}/{}", signaling_uri, my_id);
     let peer_to_dial = input.next();
     info!("Trying to connect to {}", signaling_uri);
 
     let (mut write, mut read) = connect_async(&signaling_uri).await?.0.split();
 
+    let other_peer = Arc::new(Mutex::new(peer_to_dial.clone()));
+    let other_peer_c = other_peer.clone();
     let f_write = async move {
         while let Some(m) = rx_sig_outbound.recv().await {
-            let mut value = serde_json::to_value(m.1).unwrap();
-            value
-                .as_object_mut()
-                .unwrap()
-                .insert("id".into(), serde_json::Value::String(m.0.to_string()));
-            let s = serde_json::to_string(&value).unwrap();
+            let m = SignalingMessage {
+                payload: m,
+                id: other_peer_c.lock().as_ref().cloned().unwrap(),
+            };
+            let s = serde_json::to_string(&m).unwrap();
             debug!("Sending {:?}", s);
             write.send(tungstenite::Message::text(s)).await.unwrap();
         }
@@ -56,18 +68,10 @@ async fn main() -> anyhow::Result<()> {
                 tungstenite::Message::Close(_) => panic!(),
                 _ => None,
             } {
-                let id: PeerId = val
-                    .as_object()
-                    .unwrap()
-                    .get("id")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_string()
-                    .into();
-                let c: Message = serde_json::from_value(val).unwrap();
-                println!("msg {:?} {:?}", id, c);
-                if tx_sig_inbound.send((id, c)).await.is_err() {
+                let c: SignalingMessage = serde_json::from_value(val).unwrap();
+                println!("msg {:?}", c);
+                other_peer.lock().replace(c.id);
+                if tx_sig_inbound.send(c.payload).await.is_err() {
                     panic!()
                 }
             }
@@ -76,8 +80,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     tokio::spawn(f_read);
-    let mut dc = if let Some(peer_to_dial) = peer_to_dial {
-        let mut dc = listener.dial(peer_to_dial.into(), "whatever").await?;
+    let mut dc = if peer_to_dial.is_some() {
+        let mut dc = listener.dial("whatever").await?;
         info!("dial succeed");
 
         dc.write(b"Ping").await?;
