@@ -1,0 +1,14 @@
+[package]
+name = "libdatachannel_signaling_server_example"
+version = "0.1.0"
+authors = ["Paul-Louis Ageneau"]
+edition = "2018"
+
+[dependencies]
+tokio = { version = "*", features = ["full"] }
+tungstenite = "*"
+tokio-tungstenite = "*"
+futures-util = "*"
+futures-channel = "*"
+json = "*"
+
