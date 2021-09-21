@@ -1,0 +1,45 @@
+[package]
+name = "async-datachannel-wasm"
+version = "0.2.0"
+edition = "2018"
+authors = ["Oliver Wangler <oliver@wngr.de>"]
+description = "Async Wrapper for WebRTC datachannel in the browser environment"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/wngr/async-datachannel"
+homepage = "https://github.com/wngr/async-datachannel"
+documentation = "https://docs.rs/async-datachannel-wasm"
+keywords = ["webrtc", "async", "datachannel", "wasm"]
+categories = ["concurrency"]
+readme = "README.md"
+
+[dependencies]
+anyhow = "1.0.44"
+futures = "0.3.17"
+js-sys = "0.3.55"
+log = "0.4.14"
+send_wrapper = "0.5.0"
+serde = { version = "1.0.130", features = ["derive"] }
+tokio = { version = "1.11.0", features = ["sync"] }
+tokio-stream = "0.1.7"
+wasm-bindgen = "0.2.78"
+wasm-bindgen-futures = "0.4.28"
+web-sys = { version = "0.3.55", features = [
+  "MessageEvent",
+  "RtcConfiguration",
+  "RtcPeerConnection",
+  "RtcSignalingState",
+  "RtcSdpType",
+  "RtcSessionDescriptionInit",
+  "RtcPeerConnectionIceEvent",
+  "RtcIceCandidate",
+  "RtcIceCandidateInit",
+  "RtcIceServer",
+  "RtcDataChannel",
+  "RtcDataChannelEvent",
+  "RtcDataChannelType",
+] }
+
+[dev-dependencies]
+console_log = "0.2.0"
+tokio = { version = "1.11.0", features = ["io-util", "sync"] }
+wasm-bindgen-test = "0.3.28"
