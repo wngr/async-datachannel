@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy: 
       matrix:
-        dir: [native]
+        dir: [native, wasm]
     steps:
     - name: Checkout sources
       uses: actions/checkout@v2
@@ -30,3 +30,13 @@ jobs:
     - name: cargo test
       working-directory: ${{ matrix.dir }}
       run: RUST_LOG=debug cargo test --all-features
+
+    - name: install wasm-pack
+      if: ${{ matrix.dir == 'wasm' }}
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: wasm-pack test
+      if: ${{ matrix.dir == 'wasm' }}
+      working-directory: ${{ matrix.dir }}
+      run: wasm-pack test --firefox --chrome --headless
+
