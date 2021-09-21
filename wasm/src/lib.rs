@@ -2,11 +2,12 @@
 ///[`async-datachannel`] crate.
 ///!
 ///! [`async-datachannel`]: https://crates.io/crates/async-datachannel
-use std::task::Poll;
+use std::{rc::Rc, task::Poll};
 
 use futures::{stream, StreamExt};
 use js_sys::Reflect;
 use log::*;
+use send_wrapper::SendWrapper;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -56,7 +57,7 @@ pub struct DataStream {
     //   peer_con: Option<Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>>,
     //
     _on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
-    inner: RtcDataChannel,
+    inner: SendWrapper<Rc<RtcDataChannel>>,
     // Do we need the peer_con?
     //peer_con: RtcPeerConnection,
 }
@@ -81,7 +82,7 @@ impl DataStream {
         inner.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         Self {
             _on_message: on_message,
-            inner,
+            inner: SendWrapper::new(Rc::new(inner)),
             buf_inbound: vec![],
             rx_inbound,
         }
@@ -162,7 +163,7 @@ impl AsyncWrite for DataStream {
 pub struct PeerConnection {
     //    peer_con: Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>,
     //rx_incoming: mpsc::Receiver<DataStream>,
-    inner: RtcPeerConnection,
+    inner: SendWrapper<Rc<RtcPeerConnection>>,
     sig_tx: mpsc::Sender<Message>,
     sig_rx: mpsc::Receiver<Message>,
     _on_ice_candidate: Closure<dyn FnMut(RtcPeerConnectionIceEvent)>,
@@ -206,7 +207,7 @@ impl PeerConnection {
 
         inner.set_onicecandidate(Some(on_ice_candidate.as_ref().unchecked_ref()));
         Ok(Self {
-            inner,
+            inner: SendWrapper::new(Rc::new(inner)),
             sig_rx,
             sig_tx,
             _on_ice_candidate: on_ice_candidate,
