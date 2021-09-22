@@ -44,6 +44,19 @@ pub enum Message {
     RemoteCandidate(IceCandidate),
 }
 
+#[derive(Debug, Clone)]
+pub struct RtcConfig {
+    ice_servers: Vec<String>,
+}
+
+impl RtcConfig {
+    pub fn new<S: AsRef<str>>(ice_servers: &[S]) -> Self {
+        Self {
+            ice_servers: ice_servers.iter().map(|s| s.as_ref().to_string()).collect(),
+        }
+    }
+}
+
 /// The opened data channel. This struct implements both [`AsyncRead`] and [`AsyncWrite`].
 pub struct DataStream {
     /// The actual data channel
@@ -175,23 +188,23 @@ impl PeerConnection {
     /// Create a new [`PeerConnection`] to be used for either dialing or accepting an inbound
     /// connection. The channel tuple is used to interface with an external signalling system.
     pub fn new(
-        turn: Vec<String>,
+        config: &RtcConfig,
         (sig_tx, sig_rx): (mpsc::Sender<Message>, mpsc::Receiver<Message>),
     ) -> anyhow::Result<Self> {
-        let mut config = RtcConfiguration::new();
+        let mut rtc_config = RtcConfiguration::new();
 
         let ice_servers = js_sys::Array::new();
-        for s in turn {
+        for s in &config.ice_servers {
             // TODO: handle stun?
             let mut stun_server = RtcIceServer::new();
             let stun_servers = js_sys::Array::new();
-            stun_servers.push(&JsValue::from(&s));
+            stun_servers.push(&JsValue::from(s));
             stun_server.urls(&stun_servers);
             ice_servers.push(&JsValue::from(&stun_server));
         }
-        config.ice_servers(&ice_servers);
+        rtc_config.ice_servers(&ice_servers);
 
-        let inner = RtcPeerConnection::new_with_configuration(&config)
+        let inner = RtcPeerConnection::new_with_configuration(&rtc_config)
             .map_err(|e| anyhow::anyhow!("FIXME creating peer connection {:?}", e.as_string()))?;
 
         let sig_tx_c = sig_tx.clone();

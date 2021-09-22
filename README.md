@@ -29,7 +29,7 @@ WebRTC API.
 ## Quickstart
 
 ```rust
-use async_datachannel::{Message, PeerConnection, PeerId, RtcConfig};
+use async_datachannel::{Message, PeerConnection, RtcConfig};
 use futures::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 

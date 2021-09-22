@@ -1,4 +1,4 @@
-use async_datachannel_wasm::{Message, PeerConnection};
+use async_datachannel_wasm::{Message, PeerConnection, RtcConfig};
 use futures::{
     future,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -39,10 +39,13 @@ async fn run(
         mpsc::Receiver<SignalingMessage>,
     ),
 ) -> anyhow::Result<()> {
-    let ice_servers = vec!["stun:stun.l.google.com:19302".into()];
+    let ice_servers: Vec<String> = vec!["stun:stun.l.google.com:19302".into()];
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
     let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
-    let listener = PeerConnection::new(ice_servers, (tx_sig_outbound, rx_sig_inbound))?;
+    let listener = PeerConnection::new(
+        &RtcConfig::new(&ice_servers),
+        (tx_sig_outbound, rx_sig_inbound),
+    )?;
 
     debug!("Starting up {}", my_id);
     let other_peer_c = other_peer.clone();
