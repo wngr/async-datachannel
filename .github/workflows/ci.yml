@@ -28,6 +28,7 @@ jobs:
       run: cargo build --locked
 
     - name: cargo test
+      if: ${{ matrix.dir != 'wasm' }}
       working-directory: ${{ matrix.dir }}
       run: RUST_LOG=debug cargo test --all-features
 
