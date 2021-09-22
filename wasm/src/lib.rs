@@ -4,6 +4,7 @@
 ///! [`async-datachannel`]: https://crates.io/crates/async-datachannel
 use std::{rc::Rc, task::Poll};
 
+use anyhow::Context;
 use futures::{
     channel::mpsc,
     io::{AsyncRead, AsyncWrite},
@@ -88,7 +89,9 @@ impl DataStream {
                     data
                 )),
             };
-            tx.try_send(res).expect("FIXME channel died l76");
+            if let Err(e) = tx.try_send(res) {
+                error!("Error sending via channel: {:?}", e);
+            }
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         inner.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         Self {
@@ -204,7 +207,7 @@ impl PeerConnection {
         rtc_config.ice_servers(&ice_servers);
 
         let inner = RtcPeerConnection::new_with_configuration(&rtc_config)
-            .map_err(|e| anyhow::anyhow!("FIXME creating peer connection {:?}", e.as_string()))?;
+            .map_err(|e| anyhow::anyhow!("Error creating peer connection {:?}", e.as_string()))?;
 
         let mut sig_tx_c = sig_tx.clone();
         let on_ice_candidate = Closure::wrap(Box::new(move |ev: RtcPeerConnectionIceEvent| {
@@ -213,7 +216,7 @@ impl PeerConnection {
                     candidate: candidate.candidate(),
                     mid: candidate.sdp_mid().unwrap_or_else(|| "".to_string()),
                 })) {
-                    todo!("Sending failed {:?}", e);
+                    error!("Sending via sig_tx failed {:?}", e);
                 }
             }
         })
@@ -257,7 +260,7 @@ impl PeerConnection {
             let channel = ev.channel();
             channel.set_onopen(Some(on_open.as_ref().unchecked_ref()));
             if let Err(e) = tx_chan.try_send(channel) {
-                todo!("err {:?}", e);
+                error!("err sending via channel {:?}", e);
             }
         }) as Box<dyn FnMut(RtcDataChannelEvent)>);
         inner.set_ondatachannel(Some(on_data_channel.as_ref().unchecked_ref()));
@@ -273,28 +276,37 @@ impl PeerConnection {
                             description.sdp(&desc.sdp);
                             JsFuture::from(inner.set_remote_description(&description))
                                 .await
-                                .expect("FIXME set remote descri l249");
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Error setting remote description: {:?}", e)
+                                })?;
 
                             let answer = JsFuture::from(inner.create_answer())
                                 .await
-                                .expect("FIXME create answer l252");
+                                .map_err(|e| anyhow::anyhow!("Error creating answer: {:?}", e))?;
                             let answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))
-                                .expect("FIXME get sdp from answer l254")
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Error extracting sdp from answer: {:?}", e)
+                                })?
                                 .as_string()
                                 .unwrap();
                             let mut answer_obj = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
                             answer_obj.sdp(&answer_sdp);
                             JsFuture::from(inner.set_local_description(&answer_obj))
                                 .await
-                                .expect("FIXME set local desc");
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Error setting local description: {:?}", e)
+                                })?;
 
-                            sig_tx
-                                .try_send(Message::RemoteDescription(SessionDescription {
+                            if let Err(e) =
+                                sig_tx.try_send(Message::RemoteDescription(SessionDescription {
                                     sdp_type: "answer".into(),
                                     sdp: answer_sdp,
                                 }))
-                                .expect("FIXME channel died l264");
-                            trace!("Sent answer to remote");
+                            {
+                                error!("Error sending answer via channel: {:?}", e);
+                            } else {
+                                trace!("Sent answer to remote");
+                            }
                         }
                     }
                     Message::RemoteCandidate(c) => {
@@ -304,7 +316,7 @@ impl PeerConnection {
                             inner.add_ice_candidate_with_opt_rtc_ice_candidate_init(Some(&cand)),
                         )
                         .await
-                        .expect("FIXME add ice candidate");
+                        .map_err(|e| anyhow::anyhow!("Error adding ice candidate: {:?}", e))?;
                     }
                 },
                 Either::Right(dc) => {
@@ -312,7 +324,7 @@ impl PeerConnection {
                     inner.set_onicecandidate(None);
                     inner.set_ondatachannel(None);
 
-                    rx_open.next().await.expect("FIXME channel died l287");
+                    rx_open.next().await.context("Waiting for open")?;
                     dc.set_onopen(None);
                     return Ok(DataStream::new(dc));
                 }
@@ -344,16 +356,18 @@ impl PeerConnection {
 
         let on_open = Closure::wrap(Box::new(move || {
             trace!("Outbound Datachannel opened");
-            tx_open.try_send(()).expect("FIXME channel died l318");
+            if let Err(e) = tx_open.try_send(()) {
+                error!("Error sending opening event: {:?}", e);
+            }
         }) as Box<dyn FnMut()>);
         dc.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         let mut s = stream::select(sig_rx.map(Either::Left), rx_open.map(Either::Right));
 
         let offer = JsFuture::from(inner.create_offer())
             .await
-            .expect("FIXME creating offer");
+            .map_err(|e| anyhow::anyhow!("Error creating offer: {:?}", e))?;
         let offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))
-            .expect("FIXME extracting sdp from offer")
+            .map_err(|e| anyhow::anyhow!("Error extracting sdp from offer: {:?}", e))?
             .as_string()
             .unwrap();
 
@@ -362,13 +376,13 @@ impl PeerConnection {
         let sld_promise = inner.set_local_description(&offer_obj);
         JsFuture::from(sld_promise)
             .await
-            .expect("FIXME set local desc l335");
+            .map_err(|e| anyhow::anyhow!("Error setting local description: {:?}", e))?;
         sig_tx
             .try_send(Message::RemoteDescription(SessionDescription {
                 sdp_type: "offer".into(),
                 sdp: offer_sdp,
             }))
-            .expect("FIXME channel died l342");
+            .context("Signaling channel closed")?;
 
         while let Some(m) = s.next().await {
             match m {
@@ -377,12 +391,14 @@ impl PeerConnection {
                         if desc.sdp_type == "answer" {
                             let mut description = RtcSessionDescriptionInit::new(
                                 RtcSdpType::from_js_value(&JsValue::from_str(&desc.sdp_type))
-                                    .expect("FIXME create rtc type l351"),
+                                    .context("Error creating rtc session description")?,
                             );
                             description.sdp(&desc.sdp);
                             JsFuture::from(inner.set_remote_description(&description))
                                 .await
-                                .expect("FIXME set remote desc l356");
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Error setting remote description: {:?}", e)
+                                })?;
                         }
                     }
                     Message::RemoteCandidate(c) => {
@@ -392,7 +408,7 @@ impl PeerConnection {
                             inner.add_ice_candidate_with_opt_rtc_ice_candidate_init(Some(&cand)),
                         )
                         .await
-                        .expect("FIXME add ice cand l366");
+                        .map_err(|e| anyhow::anyhow!("Error adding ice candidate: {:?}", e))?;
                     }
                 },
                 Either::Right(_) => {
