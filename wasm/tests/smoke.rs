@@ -1,11 +1,12 @@
 use async_datachannel_wasm::{Message, PeerConnection, RtcConfig};
 use futures::{
+    channel::mpsc,
     future,
     io::{AsyncReadExt, AsyncWriteExt},
+    StreamExt,
 };
 use log::{debug, info, Level};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -34,14 +35,14 @@ async fn run(
     my_id: String,
     other_peer: String,
     initiator: bool,
-    (write, mut read): (
+    (mut write, mut read): (
         mpsc::Sender<SignalingMessage>,
         mpsc::Receiver<SignalingMessage>,
     ),
 ) -> anyhow::Result<()> {
     let ice_servers: Vec<String> = vec!["stun:stun.l.google.com:19302".into()];
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
-    let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
+    let (mut tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
     let listener = PeerConnection::new(
         &RtcConfig::new(&ice_servers),
         (tx_sig_outbound, rx_sig_inbound),
@@ -50,20 +51,20 @@ async fn run(
     debug!("Starting up {}", my_id);
     let other_peer_c = other_peer.clone();
     let f_write = async move {
-        while let Some(m) = rx_sig_outbound.recv().await {
+        while let Some(m) = rx_sig_outbound.next().await {
             let m = SignalingMessage {
                 payload: m,
                 id: other_peer_c.clone(),
             };
             debug!("Sending {:?}", m);
-            write.send(m).await.unwrap();
+            write.try_send(m).unwrap();
         }
         anyhow::Result::<_, anyhow::Error>::Ok(())
     };
     let f_read = async move {
-        while let Some(c) = read.recv().await {
+        while let Some(c) = read.next().await {
             println!("Received {:?}", c);
-            if tx_sig_inbound.send(c.payload).await.is_err() {
+            if tx_sig_inbound.try_send(c.payload).is_err() {
                 //panic!()
             }
         }

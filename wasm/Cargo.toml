@@ -19,8 +19,6 @@ js-sys = "0.3.55"
 log = "0.4.14"
 send_wrapper = "0.5.0"
 serde = { version = "1.0.130", features = ["derive"] }
-tokio = { version = "1.11.0", features = ["sync"] }
-tokio-stream = "0.1.7"
 wasm-bindgen = "0.2.78"
 wasm-bindgen-futures = "0.4.28"
 web-sys = { version = "0.3.55", features = [
@@ -41,5 +39,4 @@ web-sys = { version = "0.3.55", features = [
 
 [dev-dependencies]
 console_log = "0.2.0"
-tokio = { version = "1.11.0", features = ["io-util", "sync"] }
 wasm-bindgen-test = "0.3.28"

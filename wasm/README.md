@@ -12,8 +12,7 @@ Async wrapper API for browser provided WebRTC API.
 
 ```rust
 use async_datachannel_wasm::{Message, PeerConnection, RtcConfig};
-use futures::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc;
+use futures::io::{AsyncReadExt, AsyncWriteExt, channel::mpsc};
 
 let ice_servers = vec!["stun:stun.l.google.com:19302"];
 let conf = RtcConfig::new(&ice_servers);

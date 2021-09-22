@@ -3,6 +3,7 @@ use std::{process::Stdio, sync::Arc};
 use async_datachannel::{Message, PeerConnection, RtcConfig};
 use async_tungstenite::{tokio::connect_async, tungstenite};
 use futures::{
+    channel::mpsc,
     future,
     io::{AsyncReadExt, AsyncWriteExt},
     SinkExt, StreamExt,
@@ -12,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
-    sync::mpsc,
 };
 use tracing::{debug, info};
 
@@ -60,7 +60,7 @@ async fn run(
     let ice_servers = vec!["stun:stun.l.google.com:19302"];
     let conf = RtcConfig::new(&ice_servers);
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
-    let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
+    let (mut tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
     let listener = PeerConnection::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
 
     let signaling_uri = format!("{}/{}", signaling_uri, my_id);
@@ -71,7 +71,7 @@ async fn run(
     let other_peer = Arc::new(Mutex::new(peer_to_dial.clone()));
     let other_peer_c = other_peer.clone();
     let f_write = async move {
-        while let Some(m) = rx_sig_outbound.recv().await {
+        while let Some(m) = rx_sig_outbound.next().await {
             let m = SignalingMessage {
                 payload: m,
                 id: other_peer_c.lock().as_ref().cloned().unwrap().to_string(),

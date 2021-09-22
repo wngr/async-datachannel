@@ -3,12 +3,12 @@ use std::{sync::Arc, time::Duration};
 use async_datachannel::{Message, PeerConnection, RtcConfig};
 use async_tungstenite::{tokio::connect_async, tungstenite};
 use futures::{
+    channel::mpsc,
     io::{AsyncReadExt, AsyncWriteExt},
     SinkExt, StreamExt,
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 /// Works with the signalling server from https://github.com/paullouisageneau/libdatachannel/tree/master/examples/signaling-server-rust
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let ice_servers = vec!["stun:stun.l.google.com:19302"];
     let conf = RtcConfig::new(&ice_servers);
     let (tx_sig_outbound, mut rx_sig_outbound) = mpsc::channel(32);
-    let (tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
+    let (mut tx_sig_inbound, rx_sig_inbound) = mpsc::channel(32);
     let listener = PeerConnection::new(&conf, (tx_sig_outbound, rx_sig_inbound))?;
 
     let mut input = std::env::args().skip(1);
@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let other_peer = Arc::new(Mutex::new(peer_to_dial.clone()));
     let other_peer_c = other_peer.clone();
     let f_write = async move {
-        while let Some(m) = rx_sig_outbound.recv().await {
+        while let Some(m) = rx_sig_outbound.next().await {
             let m = SignalingMessage {
                 payload: m,
                 id: other_peer_c.lock().as_ref().cloned().unwrap(),

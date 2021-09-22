@@ -5,6 +5,7 @@
 use std::{rc::Rc, task::Poll};
 
 use futures::{
+    channel::mpsc,
     io::{AsyncRead, AsyncWrite},
     stream, StreamExt,
 };
@@ -12,8 +13,6 @@ use js_sys::Reflect;
 use log::*;
 use send_wrapper::SendWrapper;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -68,7 +67,7 @@ pub struct DataStream {
     // Reference to the PeerConnection to keep around
     //   peer_con: Option<Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>>,
     //
-    _on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
+    _on_message: SendWrapper<Closure<dyn FnMut(web_sys::MessageEvent)>>,
     inner: SendWrapper<Rc<RtcDataChannel>>,
     // Do we need the peer_con?
     //peer_con: RtcPeerConnection,
@@ -77,7 +76,7 @@ pub struct DataStream {
 impl DataStream {
     fn new(inner: RtcDataChannel) -> Self {
         inner.set_binary_type(RtcDataChannelType::Arraybuffer);
-        let (tx, rx_inbound) = mpsc::channel(32);
+        let (mut tx, rx_inbound) = mpsc::channel(32);
         let on_message = Closure::wrap(Box::new(move |ev: web_sys::MessageEvent| {
             let res = match ev.data().dyn_into::<js_sys::ArrayBuffer>() {
                 Ok(data) => {
@@ -89,11 +88,11 @@ impl DataStream {
                     data
                 )),
             };
-            tx.blocking_send(res).expect("FIXME channel died l76");
+            tx.try_send(res).expect("FIXME channel died l76");
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         inner.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         Self {
-            _on_message: on_message,
+            _on_message: SendWrapper::new(on_message),
             inner: SendWrapper::new(Rc::new(inner)),
             buf_inbound: vec![],
             rx_inbound,
@@ -120,7 +119,7 @@ impl AsyncRead for DataStream {
                 Poll::Ready(Ok(space))
             }
         } else {
-            match self.as_mut().rx_inbound.poll_recv(cx) {
+            match self.as_mut().rx_inbound.poll_next_unpin(cx) {
                 std::task::Poll::Ready(Some(Ok(x))) => {
                     let space = buf.len();
                     if x.len() <= space {
@@ -181,7 +180,7 @@ pub struct PeerConnection {
     inner: SendWrapper<Rc<RtcPeerConnection>>,
     sig_tx: mpsc::Sender<Message>,
     sig_rx: mpsc::Receiver<Message>,
-    _on_ice_candidate: Closure<dyn FnMut(RtcPeerConnectionIceEvent)>,
+    _on_ice_candidate: SendWrapper<Closure<dyn FnMut(RtcPeerConnectionIceEvent)>>,
 }
 
 impl PeerConnection {
@@ -207,10 +206,10 @@ impl PeerConnection {
         let inner = RtcPeerConnection::new_with_configuration(&rtc_config)
             .map_err(|e| anyhow::anyhow!("FIXME creating peer connection {:?}", e.as_string()))?;
 
-        let sig_tx_c = sig_tx.clone();
+        let mut sig_tx_c = sig_tx.clone();
         let on_ice_candidate = Closure::wrap(Box::new(move |ev: RtcPeerConnectionIceEvent| {
             if let Some(candidate) = ev.candidate() {
-                if let Err(e) = sig_tx_c.blocking_send(Message::RemoteCandidate(IceCandidate {
+                if let Err(e) = sig_tx_c.try_send(Message::RemoteCandidate(IceCandidate {
                     candidate: candidate.candidate(),
                     mid: candidate.sdp_mid().unwrap_or_else(|| "".to_string()),
                 })) {
@@ -225,7 +224,7 @@ impl PeerConnection {
             inner: SendWrapper::new(Rc::new(inner)),
             sig_rx,
             sig_tx,
-            _on_ice_candidate: on_ice_candidate,
+            _on_ice_candidate: SendWrapper::new(on_ice_candidate),
         })
     }
 
@@ -239,33 +238,30 @@ impl PeerConnection {
         let Self {
             inner,
             sig_rx,
-            sig_tx,
+            mut sig_tx,
             ..
         } = self;
         enum Either<A, B> {
             Left(A),
             Right(B),
         }
-        let (tx_open, mut rx_open) = mpsc::channel(1);
-        let (tx_chan, rx_chan) = mpsc::channel(1);
+        let (mut tx_open, mut rx_open) = mpsc::channel(1);
+        let (mut tx_chan, rx_chan) = mpsc::channel(1);
 
         let on_open = Closure::wrap(Box::new(move || {
             trace!("Inbound data channel opened");
-            tx_open.blocking_send(()).expect("channel diend l226");
+            tx_open.try_send(()).expect("channel diend l226");
         }) as Box<dyn FnMut()>);
         let on_data_channel = Closure::wrap(Box::new(move |ev: RtcDataChannelEvent| {
             trace!("Inbound connection attempt");
             let channel = ev.channel();
             channel.set_onopen(Some(on_open.as_ref().unchecked_ref()));
-            if let Err(e) = tx_chan.blocking_send(channel) {
+            if let Err(e) = tx_chan.try_send(channel) {
                 todo!("err {:?}", e);
             }
         }) as Box<dyn FnMut(RtcDataChannelEvent)>);
         inner.set_ondatachannel(Some(on_data_channel.as_ref().unchecked_ref()));
-        let mut s = stream::select(
-            ReceiverStream::new(sig_rx).map(Either::Left),
-            ReceiverStream::new(rx_chan).map(Either::Right),
-        );
+        let mut s = stream::select(sig_rx.map(Either::Left), rx_chan.map(Either::Right));
 
         while let Some(m) = s.next().await {
             match m {
@@ -293,11 +289,10 @@ impl PeerConnection {
                                 .expect("FIXME set local desc");
 
                             sig_tx
-                                .send(Message::RemoteDescription(SessionDescription {
+                                .try_send(Message::RemoteDescription(SessionDescription {
                                     sdp_type: "answer".into(),
                                     sdp: answer_sdp,
                                 }))
-                                .await
                                 .expect("FIXME channel died l264");
                             trace!("Sent answer to remote");
                         }
@@ -317,7 +312,7 @@ impl PeerConnection {
                     inner.set_onicecandidate(None);
                     inner.set_ondatachannel(None);
 
-                    rx_open.recv().await.expect("FIXME channel died l287");
+                    rx_open.next().await.expect("FIXME channel died l287");
                     dc.set_onopen(None);
                     return Ok(DataStream::new(dc));
                 }
@@ -335,7 +330,7 @@ impl PeerConnection {
     /// set_remote_description(&answer)
     pub async fn dial(self, label: &str) -> anyhow::Result<DataStream> {
         let Self {
-            sig_tx,
+            mut sig_tx,
             inner,
             sig_rx,
             ..
@@ -345,17 +340,14 @@ impl PeerConnection {
             Left(A),
             Right(B),
         }
-        let (tx_open, rx_open) = mpsc::channel::<()>(1);
+        let (mut tx_open, rx_open) = mpsc::channel::<()>(1);
 
         let on_open = Closure::wrap(Box::new(move || {
             trace!("Outbound Datachannel opened");
-            tx_open.blocking_send(()).expect("FIXME channel died l318");
+            tx_open.try_send(()).expect("FIXME channel died l318");
         }) as Box<dyn FnMut()>);
         dc.set_onopen(Some(on_open.as_ref().unchecked_ref()));
-        let mut s = stream::select(
-            ReceiverStream::new(sig_rx).map(Either::Left),
-            ReceiverStream::new(rx_open).map(Either::Right),
-        );
+        let mut s = stream::select(sig_rx.map(Either::Left), rx_open.map(Either::Right));
 
         let offer = JsFuture::from(inner.create_offer())
             .await
@@ -372,11 +364,10 @@ impl PeerConnection {
             .await
             .expect("FIXME set local desc l335");
         sig_tx
-            .send(Message::RemoteDescription(SessionDescription {
+            .try_send(Message::RemoteDescription(SessionDescription {
                 sdp_type: "offer".into(),
                 sdp: offer_sdp,
             }))
-            .await
             .expect("FIXME channel died l342");
 
         while let Some(m) = s.next().await {
