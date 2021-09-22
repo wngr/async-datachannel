@@ -1,11 +1,11 @@
 use async_datachannel_wasm::{Message, PeerConnection};
-use futures::future;
+use futures::{
+    future,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 use log::{debug, info, Level};
 use serde::{Deserialize, Serialize};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc,
-};
+use tokio::sync::mpsc;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
 wasm_bindgen_test_configure!(run_in_browser);

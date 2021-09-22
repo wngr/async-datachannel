@@ -4,15 +4,15 @@
 ///! [`async-datachannel`]: https://crates.io/crates/async-datachannel
 use std::{rc::Rc, task::Poll};
 
-use futures::{stream, StreamExt};
+use futures::{
+    io::{AsyncRead, AsyncWrite},
+    stream, StreamExt,
+};
 use js_sys::Reflect;
 use log::*;
 use send_wrapper::SendWrapper;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::mpsc,
-};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use wasm_bindgen::{prelude::*, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -44,8 +44,7 @@ pub enum Message {
     RemoteCandidate(IceCandidate),
 }
 
-/// The opened data channel. This struct implements both [`AsyncRead`] and [`AsyncWrite`]
-/// (tokio-flavoured).
+/// The opened data channel. This struct implements both [`AsyncRead`] and [`AsyncWrite`].
 pub struct DataStream {
     /// The actual data channel
     //    inner: Box<RtcDataChannel<DataChannel>>,
@@ -93,35 +92,38 @@ impl AsyncRead for DataStream {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
         if !self.buf_inbound.is_empty() {
-            let space = buf.remaining();
+            let space = buf.len();
             if self.buf_inbound.len() <= space {
-                buf.put_slice(&self.buf_inbound[..]);
+                let len = self.buf_inbound.len();
+                buf[..len].copy_from_slice(&self.buf_inbound[..]);
                 self.buf_inbound.drain(..);
+                Poll::Ready(Ok(len))
             } else {
-                buf.put_slice(&self.buf_inbound[..space]);
+                buf.copy_from_slice(&self.buf_inbound[..space]);
                 self.buf_inbound.drain(..space);
+                Poll::Ready(Ok(space))
             }
-            Poll::Ready(Ok(()))
         } else {
             match self.as_mut().rx_inbound.poll_recv(cx) {
                 std::task::Poll::Ready(Some(Ok(x))) => {
-                    let space = buf.remaining();
+                    let space = buf.len();
                     if x.len() <= space {
-                        buf.put_slice(&x[..]);
+                        buf[..x.len()].copy_from_slice(&x[..]);
+                        Poll::Ready(Ok(x.len()))
                     } else {
-                        buf.put_slice(&x[..space]);
+                        buf.copy_from_slice(&x[..space]);
                         self.buf_inbound.extend_from_slice(&x[space..]);
+                        Poll::Ready(Ok(space))
                     }
-                    Poll::Ready(Ok(()))
                 }
                 std::task::Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     e.to_string(),
                 ))),
-                std::task::Poll::Ready(None) => Poll::Ready(Ok(())),
+                std::task::Poll::Ready(None) => Poll::Ready(Ok(0)),
                 Poll::Pending => Poll::Pending,
             }
         }
@@ -152,7 +154,7 @@ impl AsyncWrite for DataStream {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
+    fn poll_close(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {

@@ -17,10 +17,8 @@ you're interested in supporting other runtimes, let me know.
 
 ```rust
 use async_datachannel::{Message, PeerConnection, PeerId, RtcConfig};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc,
-};
+use futures::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::mpsc;
 
 let ice_servers = vec!["stun:stun.l.google.com:19302"];
 let conf = RtcConfig::new(&ice_servers);

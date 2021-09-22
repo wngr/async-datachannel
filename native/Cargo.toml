@@ -15,6 +15,7 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.44"
 datachannel = "0.7.0"
+futures = "0.3.17"
 parking_lot = "0.11.2"
 serde = { version = "1.0.130", optional = true, features = ["derive"] }
 tokio = { version = "1.11.0", features = ["io-util", "rt", "sync"] }

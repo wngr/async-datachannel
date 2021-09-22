@@ -2,13 +2,13 @@ use std::{sync::Arc, time::Duration};
 
 use async_datachannel::{Message, PeerConnection, RtcConfig};
 use async_tungstenite::{tokio::connect_async, tungstenite};
-use futures::{SinkExt, StreamExt};
+use futures::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    SinkExt, StreamExt,
+};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc,
-};
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 /// Works with the signalling server from https://github.com/paullouisageneau/libdatachannel/tree/master/examples/signaling-server-rust
