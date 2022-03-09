@@ -1,6 +1,6 @@
 [package]
 name = "async-datachannel"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2018"
 authors = ["Oliver Wangler <oliver@wngr.de>"]
 description = "Async Wrapper for datachannel"
@@ -13,20 +13,20 @@ categories = ["concurrency"]
 readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.44"
-datachannel = "0.7.0"
-futures = "0.3.17"
-parking_lot = "0.11.2"
-serde = { version = "1.0.130", optional = true, features = ["derive"] }
-tokio = { version = "1.11.0", features = ["rt"] }
-tracing = "0.1.27"
+anyhow = "1.0.56"
+datachannel = "0.7.4"
+futures = "0.3.21"
+parking_lot = "0.12.0"
+serde = { version = "1.0.136", optional = true, features = ["derive"] }
+tokio = { version = "1.17.0", features = ["rt"] }
+tracing = "0.1.32"
 
 [dev-dependencies]
-async-tungstenite = { version = "0.15.0", features = ["tokio-openssl"] }
-futures = "0.3.17"
-serde_json = "1.0.68"
-tokio = { version = "1.11.0", features = ["full"] }
-tracing-subscriber = "0.2.22"
+async-tungstenite = { version = "0.17.1", features = ["tokio-openssl"] }
+futures = "0.3.21"
+serde_json = "1.0.79"
+tokio = { version = "1.17.0", features = ["full"] }
+tracing-subscriber = "0.3.9"
 
 [features]
 default = ["static", "derive"]
