@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         let mut dc = listener.dial("whatever").await?;
         info!("dial succeed");
 
-        dc.write(b"Ping").await?;
+        dc.write_all(b"Ping").await?;
         dc
     } else {
         let dc = listener.accept().await?;
@@ -96,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         let n = dc.read(&mut buf).await?;
         println!("Read: \"{}\"", String::from_utf8_lossy(&buf[..n]));
-        dc.write(b"Ping").await?;
+        dc.write_all(b"Ping").await?;
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }

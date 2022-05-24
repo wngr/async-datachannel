@@ -77,7 +77,7 @@ async fn run(
             let mut dc = listener.dial("whatever").await?;
             info!("dial succeed");
 
-            dc.write(b"Ping").await?;
+            dc.write_all(b"Ping").await?;
             info!("wrote ping, waiting for pong");
             let n = dc.read(&mut buf).await?;
             assert_eq!(b"Pong", &buf[..n]);
@@ -89,7 +89,7 @@ async fn run(
             let n = dc.read(&mut buf).await?;
             assert_eq!(b"Ping", &buf[..n]);
             info!("received ping, sending pong");
-            dc.write(b"Pong").await?;
+            dc.write_all(b"Pong").await?;
         };
         anyhow::Result::<_, anyhow::Error>::Ok(())
     };

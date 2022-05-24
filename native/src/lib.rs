@@ -21,6 +21,7 @@ use tracing::{debug, error};
 #[cfg_attr(feature = "derive", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "derive", serde(untagged))]
 /// Messages to be used for external signalling.
+#[allow(clippy::large_enum_variant)]
 pub enum Message {
     RemoteDescription(SessionDescription),
     RemoteCandidate(IceCandidate),
