@@ -4,7 +4,9 @@
 use std::{sync::Arc, task::Poll};
 
 use anyhow::Context;
-pub use datachannel::{ConnectionState, IceCandidate, RtcConfig, SessionDescription};
+pub use datachannel::{
+    ConnectionState, DataChannelInit, IceCandidate, Reliability, RtcConfig, SessionDescription,
+};
 use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection};
 use futures::{
     channel::mpsc,
@@ -98,6 +100,16 @@ pub struct DataStream {
     peer_con: Option<Arc<Mutex<Box<RtcPeerConnection<ConnInternal>>>>>,
     /// Reference to the outbound piper
     handle: Option<JoinHandle<()>>,
+}
+
+impl DataStream {
+    pub fn buffered_amount(&self) -> usize {
+        self.inner.buffered_amount()
+    }
+
+    pub fn available_amount(&self) -> usize {
+        self.inner.available_amount()
+    }
 }
 
 impl AsyncRead for DataStream {
@@ -226,6 +238,27 @@ impl PeerConnection {
     pub async fn dial(self, label: &str) -> anyhow::Result<DataStream> {
         let (mut ready, rx_inbound, chan) = DataChannel::new();
         let dc = self.peer_con.lock().create_data_channel(label, chan)?;
+        ready.next().await.context("Tx dropped")??;
+        Ok(DataStream {
+            inner: dc,
+            rx_inbound,
+            buf_inbound: vec![],
+            handle: Some(self.handle),
+            peer_con: Some(self.peer_con),
+        })
+    }
+
+    /// Initiate an outbound dialing with extra options.
+    pub async fn dial_ex(
+        self,
+        label: &str,
+        dc_init: &DataChannelInit,
+    ) -> anyhow::Result<DataStream> {
+        let (mut ready, rx_inbound, chan) = DataChannel::new();
+        let dc = self
+            .peer_con
+            .lock()
+            .create_data_channel_ex(label, chan, dc_init)?;
         ready.next().await.context("Tx dropped")??;
         Ok(DataStream {
             inner: dc,
