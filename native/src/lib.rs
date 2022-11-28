@@ -7,7 +7,7 @@ use anyhow::Context;
 pub use datachannel::{
     ConnectionState, DataChannelInit, IceCandidate, Reliability, RtcConfig, SessionDescription,
 };
-use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection};
+use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection, DataChannelInfo};
 use futures::{
     channel::mpsc,
     io::{AsyncRead, AsyncWrite},
@@ -279,7 +279,7 @@ struct ConnInternal {
 impl PeerConnectionHandler for ConnInternal {
     type DCH = DataChannel;
 
-    fn data_channel_handler(&mut self) -> Self::DCH {
+    fn data_channel_handler(&mut self, _info: DataChannelInfo) -> Self::DCH {
         let (_, rx, dc) = DataChannel::new();
         self.pending.replace(rx);
         dc
