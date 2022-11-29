@@ -21,7 +21,7 @@ use web_sys::{
     RtcIceServer, RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType,
     RtcSessionDescriptionInit,
 };
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IceCandidate {
     pub candidate: String,
     #[serde(rename = "sdpMid")]
@@ -214,7 +214,7 @@ impl PeerConnection {
             if let Some(candidate) = ev.candidate() {
                 if let Err(e) = sig_tx_c.try_send(Message::RemoteCandidate(IceCandidate {
                     candidate: candidate.candidate(),
-                    mid: candidate.sdp_mid().unwrap_or_else(|| "".to_string()),
+                    mid: candidate.sdp_mid().unwrap_or_default(),
                 })) {
                     error!("Sending via sig_tx failed {:?}", e);
                 }
