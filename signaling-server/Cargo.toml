@@ -5,10 +5,10 @@ authors = ["Paul-Louis Ageneau"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "*", features = ["full"] }
-tungstenite = "*"
-tokio-tungstenite = "*"
-futures-util = "*"
-futures-channel = "*"
-json = "*"
+futures-channel = "0.3.25"
+futures-util = "0.3.25"
+json = "0.12.4"
+tokio = { version = "1.22.0", features = ["full"] }
+tokio-tungstenite = "0.18.0"
+tungstenite = "0.18.0"
 

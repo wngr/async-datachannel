@@ -16,23 +16,23 @@
  * along with this program; If not, see <http://www.gnu.org/licenses/>.
  */
 
+extern crate futures_channel;
+extern crate futures_util;
+extern crate json;
 extern crate tokio;
 extern crate tungstenite;
-extern crate futures_util;
-extern crate futures_channel;
-extern crate json;
 
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::sync::{Arc, Mutex};
 
 use tokio::net::{TcpListener, TcpStream};
-use tungstenite::protocol::Message;
 use tungstenite::handshake::server::{Request, Response};
+use tungstenite::protocol::Message;
 
-use futures_util::{future, pin_mut, StreamExt};
-use futures_util::stream::TryStreamExt;
 use futures_channel::mpsc;
+use futures_util::stream::TryStreamExt;
+use futures_util::{future, pin_mut, StreamExt};
 
 type Id = String;
 type Tx = mpsc::UnboundedSender<Message>;
@@ -44,12 +44,13 @@ async fn handle(clients: ClientsMap, stream: TcpStream) {
         let path: &str = req.uri().path();
         let tokens: Vec<&str> = path.split('/').collect();
         client_id = tokens[1].to_string();
-        return Ok(response);
+        Ok(response)
     };
 
     let websocket = tokio_tungstenite::accept_hdr_async(stream, callback)
-        .await.expect("WebSocket handshake failed");
-	println!("Client {} connected", &client_id);
+        .await
+        .expect("WebSocket handshake failed");
+    println!("Client {} connected", &client_id);
 
     let (tx, rx) = mpsc::unbounded();
     clients.lock().unwrap().insert(client_id.clone(), tx);
@@ -75,7 +76,7 @@ async fn handle(clients: ClientsMap, stream: TcpStream) {
                     // Send to remote
                     println!("Client {} >> {}", &remote_id, &text);
                     remote.unbounded_send(Message::text(text)).unwrap();
-                },
+                }
                 _ => println!("Client {} not found", &remote_id),
             }
         }
@@ -91,13 +92,18 @@ async fn handle(clients: ClientsMap, stream: TcpStream) {
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    let service = env::args().nth(1).unwrap_or("8000".to_string());
-    let endpoint = if service.contains(':') { service } else { format!("127.0.0.1:{}", service) };
+    let service = env::args().nth(1).unwrap_or_else(|| "8000".to_string());
+    let endpoint = if service.contains(':') {
+        service
+    } else {
+        format!("127.0.0.1:{}", service)
+    };
 
-	println!("Listening on {}", endpoint);
+    println!("Listening on {}", endpoint);
 
-    let mut listener = TcpListener::bind(endpoint)
-    	.await.expect("Listener binding failed");
+    let listener = TcpListener::bind(endpoint)
+        .await
+        .expect("Listener binding failed");
 
     let clients = ClientsMap::new(Mutex::new(HashMap::new()));
 
@@ -105,6 +111,5 @@ async fn main() -> Result<(), std::io::Error> {
         tokio::spawn(handle(clients.clone(), stream));
     }
 
-    return Ok(())
+    Ok(())
 }
-
