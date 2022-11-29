@@ -28,7 +28,7 @@ struct SignalingMessage {
 async fn smoke() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let mut cmd = Command::new("cargo");
-    cmd.args(&["run"])
+    cmd.args(["run"])
         .current_dir("../signaling-server")
         .stdout(Stdio::piped())
         .kill_on_drop(true);
