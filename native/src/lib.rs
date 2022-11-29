@@ -7,7 +7,9 @@ use anyhow::Context;
 pub use datachannel::{
     ConnectionState, DataChannelInit, IceCandidate, Reliability, RtcConfig, SessionDescription,
 };
-use datachannel::{DataChannelHandler, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection, DataChannelInfo};
+use datachannel::{
+    DataChannelHandler, DataChannelInfo, PeerConnectionHandler, RtcDataChannel, RtcPeerConnection,
+};
 use futures::{
     channel::mpsc,
     io::{AsyncRead, AsyncWrite},
