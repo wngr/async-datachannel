@@ -13,20 +13,20 @@ categories = ["concurrency"]
 readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.56"
+anyhow = "1.0.66"
 datachannel = "0.8.0"
-futures = "0.3.21"
-parking_lot = "0.12.0"
-serde = { version = "1.0.136", optional = true, features = ["derive"] }
-tokio = { version = "1.17.0", features = ["rt"] }
-tracing = "0.1.32"
+futures = "0.3.25"
+parking_lot = "0.12.1"
+serde = { version = "1.0.148", optional = true, features = ["derive"] }
+tokio = { version = "1.22.0", features = ["rt"] }
+tracing = "0.1.37"
 
 [dev-dependencies]
-async-tungstenite = { version = "0.17.1", features = ["tokio-openssl"] }
-futures = "0.3.21"
-serde_json = "1.0.79"
-tokio = { version = "1.17.0", features = ["full"] }
-tracing-subscriber = "0.3.9"
+async-tungstenite = { version = "0.17.2", features = ["tokio-openssl"] }
+futures = "0.3.25"
+serde_json = "1.0.89"
+tokio = { version = "1.22.0", features = ["full"] }
+tracing-subscriber = "0.3.16"
 
 [features]
 default = ["static", "derive"]
